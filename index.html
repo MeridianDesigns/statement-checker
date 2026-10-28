@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etsy Statement Checker</title>
+<meta name="description" content="Free in-browser check of an Etsy Payment-account monthly statement CSV: every fee line, proven to the penny against Etsy's own net. Nothing is uploaded.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #FAFAF6;
+    --greige: #F0EEE7;
+    --forest: #1A4A31;
+    --slate: #2E5064;
+    --clay: #B85C36;
+    --ink: #1F2A24;
+    --muted: #6B746E;
+    --line: #DAD6CB;
+    --surface: #FFFFFF;
+    --accent-soft: #E6EEE9;
+    --clay-soft: #F6E8E0;
+    --shadow: 0 1px 2px rgba(31, 42, 36, 0.05);
+    --font-head: "Fraunces", Georgia, "Times New Roman", serif;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: #16201B;
+      --greige: #1E2924;
+      --forest: #8FC4A5;
+      --slate: #8FB4CC;
+      --clay: #E09A77;
+      --ink: #ECEDE7;
+      --muted: #9AA39D;
+      --line: #33403A;
+      --surface: #1B2621;
+      --accent-soft: #223329;
+      --clay-soft: #3A2A22;
+      --shadow: none;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px 64px; }
+
+  header { padding: 48px 0 28px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 12px;
+  }
+  h1 {
+    font-family: var(--font-head); font-weight: 500; font-size: clamp(30px, 5vw, 42px);
+    line-height: 1.1; margin: 0 0 14px; letter-spacing: -0.01em;
+  }
+  .lede { font-size: 17px; color: var(--muted); margin: 0; max-width: 60ch; }
+  .lede strong { color: var(--ink); font-weight: 500; }
+
+  /* Drop zone */
+  .drop {
+    border: 1.5px dashed var(--line); border-radius: 14px;
+    background: var(--greige); padding: 36px 20px; text-align: center;
+    transition: border-color .15s, background .15s;
+    position: relative;
+  }
+  .drop.over { border-color: var(--forest); background: var(--accent-soft); }
+  .drop h2 { font-family: var(--font-head); font-weight: 500; font-size: 22px; margin: 0 0 6px; }
+  .drop p { margin: 0 0 18px; color: var(--muted); }
+  .drop input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+  .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    appearance: none; border: 1px solid var(--forest); border-radius: 8px;
+    padding: 10px 18px; font: inherit; font-weight: 500; cursor: pointer;
+    background: var(--forest); color: var(--canvas);
+  }
+  .btn.ghost { background: transparent; color: var(--forest); }
+  .btn:focus-visible { outline: 2px solid var(--slate); outline-offset: 2px; }
+  .hint { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .files { margin: 12px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+  .files li { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+  .error { margin-top: 14px; color: var(--clay); font-size: 14px; }
+
+  /* Results */
+  #results[hidden] { display: none; }
+  section { margin-top: 40px; }
+  .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h2.sec { font-family: var(--font-head); font-weight: 500; font-size: 24px; margin: 0; }
+  .sec-note { color: var(--muted); font-size: 13px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 16px 14px; box-shadow: var(--shadow); min-width: 0;
+  }
+  .tile .k { font-size: 12px; color: var(--muted); font-weight: 500; letter-spacing: 0.02em; }
+  .tile .v {
+    font-family: var(--font-head); font-size: 28px; font-weight: 500; line-height: 1.15;
+    margin-top: 6px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+  }
+  .tile .s { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .tile.ok .v { color: var(--forest); }
+  .tile.bad .v { color: var(--clay); }
+
+  .headline {
+    margin-top: 18px; padding: 18px 20px; border-radius: 12px;
+    background: var(--accent-soft); border: 1px solid var(--line);
+    font-family: var(--font-head); font-size: 20px; line-height: 1.35;
+  }
+  .headline b { font-weight: 600; color: var(--forest); }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .tbl-wrap { border-radius: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  th, td { padding: 10px 14px; text-align: left; border-top: 1px solid var(--line); vertical-align: top; }
+  thead th { border-top: 0; background: var(--greige); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.n { color: var(--muted); }
+  tr.group td { background: var(--greige); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding-top: 8px; padding-bottom: 8px; }
+  tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
+  tr.sub td { color: var(--muted); font-style: italic; }
+  tr.indent td:first-child { padding-left: 28px; }
+  .tag { display: inline-block; font-size: 11px; font-style: normal; font-weight: 500; letter-spacing: .03em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .neg { color: var(--clay); }
+  .pos { color: var(--forest); }
+  .mono { font-family: var(--font-mono); font-size: 13px; }
+
+  .unc-note { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .unc td { font-size: 14px; }
+
+  footer { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink); }
+  footer p { margin: 0 0 8px; }
+  footer .muted { color: var(--muted); }
+  footer a { color: var(--slate); }
+
+  .sr { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Free tool · runs in your browser</p>
+    <h1>Etsy Statement Checker</h1>
+    <p class="lede">Drop the <strong>monthly statement CSV</strong> from your Etsy Payment account. You get every fee line totalled, and a proof line showing the categories add back up to Etsy's own net, to the cent.</p>
+  </header>
+
+  <div class="drop" id="drop">
+    <h2>Drop your statement CSV here</h2>
+    <p>Finances → Payment account → Monthly statements → Download CSV. Several months at once is fine.</p>
+    <div class="actions">
+      <label class="btn" for="file">Choose files</label>
+      <input type="file" id="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" multiple>
+      <button class="btn ghost" id="sample" type="button">Load sample</button>
+      <button class="btn ghost" id="clear" type="button" hidden>Clear</button>
+    </div>
+    <p class="hint">Nothing leaves this page. The file is read by your browser and never uploaded.</p>
+    <ul class="files" id="files"></ul>
+    <div class="error" id="error" hidden></div>
+  </div>
+
+  <div id="results" hidden>
+    <section>
+      <div class="sec-head">
+        <h2 class="sec">Statement check</h2>
+        <span class="sec-note" id="currency-note"></span>
+      </div>
+      <div class="tiles">
+        <div class="tile"><div class="k">Rows read</div><div class="v" id="t-rows">0</div><div class="s" id="t-rows-s"></div></div>
+        <div class="tile" id="tile-unc"><div class="k">Rows not classified</div><div class="v" id="t-unc">0</div><div class="s" id="t-unc-s"></div></div>
+        <div class="tile" id="tile-proof"><div class="k">Statement net − every categorized line</div><div class="v" id="t-proof">0.00</div><div class="s" id="t-proof-s"></div></div>
+        <div class="tile"><div class="k">Months covered</div><div class="v" id="t-months">0</div><div class="s" id="t-months-s"></div></div>
+      </div>
+      <div class="headline" id="headline"></div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2 class="sec">Where the money went</h2>
+        <span class="sec-note">Signs as on the statement: fees are negative.</span>
+      </div>
+      <div class="tbl-wrap">
+      <table id="tree">
+        <thead><tr><th>Line</th><th class="num">Rows</th><th class="num">Total</th></tr></thead>
+        <tbody id="tree-body"></tbody>
+      </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2 class="sec">By month</h2>
+        <span class="sec-note">Net is the sum of every row in that month.</span>
+      </div>
+      <div class="tbl-wrap">
+      <table id="monthly">
+        <thead><tr><th>Month</th><th class="num">Sales</th><th class="num">Refunds</th><th class="num">Fees</th><th class="num">Net</th><th class="num">Deposits</th></tr></thead>
+        <tbody id="monthly-body"></tbody>
+      </table>
+      </div>
+    </section>
+
+    <section id="unc-section" hidden>
+      <div class="sec-head">
+        <h2 class="sec">Unclassified rows</h2>
+      </div>
+      <p class="unc-note">These rows have a Type or Title the checker has not seen before. Send them to the shop (the row text is enough) and the classifier will learn them.</p>
+      <div class="tbl-wrap">
+      <table class="unc">
+        <thead><tr><th>Type</th><th>Title</th><th>Info</th><th class="num">Net</th></tr></thead>
+        <tbody id="unc-body"></tbody>
+      </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>Runs in your browser. Nothing is uploaded. Checked against real statements from five shops (US 2026, UK 2024, euro 2025).</p>
+      <!-- shop link line hidden until the shop exists: <p class="muted">From the makers of <a href="#">Etsy P&amp;L from your own CSV</a> [SHOP LINK] — the spreadsheet does this per order, per month, with a payout check and a tax summary.</p> -->
+    </footer>
+  </div>
+</div>
+
+<script type="application/json" id="checker-json">{}</script>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------------------------------------------------------
+     Classifier. This is the product's logic; keep it exact.
+     --------------------------------------------------------------- */
+  const L = {
+    SALES: 'Sales',
+    REFUNDS: 'Refunds',
+    DEPOSIT: 'Deposit',
+    PAYMENT: 'Payment to Etsy',
+    ADJUST: 'Adjustment',
+    SHIPPING: 'Shipping labels',
+    VAT: 'VAT on fees',
+    SALES_TAX: 'Sales tax remitted (pass-through)',
+    TAX_FEES: 'Tax on fees',
+    OFFSITE: 'Offsite Ads',
+    ETSY_ADS: 'Etsy Ads',
+    TXN: 'Transaction fees',
+    PROC: 'Payment processing',
+    LISTING: 'Listing fees',
+    REG: 'Regulatory fee',
+    SUB: 'Subscription',
+    FX: 'Currency conversion',
+    OTHER_FEE: 'Other fees',
+    SALE_EMBEDDED: 'Fees inside sale rows',
+    UNC: 'Unclassified'
+  };
+
+  function classify(type, title) {
+    const t = String(type || '').trim().toLowerCase();
+    const s = String(title || '').toLowerCase();
+    const has = (k) => s.indexOf(k) !== -1;
+    switch (t) {
+      case 'sale': return L.SALES;
+      case 'refund': return L.REFUNDS;
+      case 'deposit': return L.DEPOSIT;
+      case 'payment': return L.PAYMENT;
+      case 'adjustment': return L.ADJUST;
+      case 'shipping': return L.SHIPPING;
+      case 'vat': return L.VAT;
+      case 'tax': return has('sales tax') ? L.SALES_TAX : L.TAX_FEES;
+      case 'marketing': return has('offsite') ? L.OFFSITE : L.ETSY_ADS;
+      case 'fee':
+        if (has('transaction fee')) return L.TXN;
+        if (has('processing fee')) return L.PROC;
+        if (has('listing fee')) return L.LISTING;
+        if (has('regulatory')) return L.REG;
+        if (has('offsite')) return L.OFFSITE;
+        if (has('plus') || has('subscription')) return L.SUB;
+        if (has('currency')) return L.FX;
+        if (has('renew') || has('multi-quantity')) return L.LISTING;
+        return L.OTHER_FEE;
+      case 'subscription': return L.SUB;
+      case 'transaction': return L.TXN;
+      case 'listing': return L.LISTING;
+      default: return L.UNC;
+    }
+  }
+
+  // Lines that count as Etsy fees, in display order.
+  const FEE_LINES = [L.TXN, L.PROC, L.LISTING, L.REG, L.ETSY_ADS, L.OFFSITE, L.SUB, L.FX, L.OTHER_FEE, L.SALE_EMBEDDED, L.VAT, L.TAX_FEES];
+  // Lines that are money movements, not fees.
+  const OTHER_LINES = [L.SALES_TAX, L.SHIPPING, L.PAYMENT, L.ADJUST];
+
+  /* ---------------------------------------------------------------
+     Parsing helpers
+     --------------------------------------------------------------- */
+  function isNull(s) {
+    const v = String(s == null ? '' : s).trim();
+    return v === '' || v === '--' || v === '-' || v === '—';
+  }
+
+  // "$2.49" "-$0.16" "-€0.17" "£1,208.35" "-₫2,207" "(1.00)" → number or null
+  function parseMoney(s) {
+    if (isNull(s)) return null;
+    let v = String(s).trim();
+    const neg = /^\s*[-−(]/.test(v) || /^\s*[^\d\s]{0,4}\s*[-−]/.test(v);
+    let digits = v.replace(/[^\d.,]/g, '');
+    if (!digits) return null;
+    const lastDot = digits.lastIndexOf('.');
+    const lastComma = digits.lastIndexOf(',');
+    if (lastDot !== -1 && lastComma !== -1) {
+      if (lastDot > lastComma) digits = digits.replace(/,/g, '');
+      else digits = digits.replace(/\./g, '').replace(',', '.');
+    } else if (lastComma !== -1) {
+      const tail = digits.length - lastComma - 1;
+      const commas = (digits.match(/,/g) || []).length;
+      if (tail === 3 || commas > 1) digits = digits.replace(/,/g, '');
+      else digits = digits.replace(',', '.');
+    }
+    const n = parseFloat(digits);
+    if (!isFinite(n)) return null;
+    return neg ? -n : n;
+  }
+
+  // First number in free text (any currency symbol, thousands commas). null if none.
+  function firstNumber(text) {
+    const m = String(text || '').match(/\d[\d,]*(?:\.\d+)?/);
+    if (!m) return null;
+    const n = parseFloat(m[0].replace(/,/g, ''));
+    return isFinite(n) ? n : null;
+  }
+
+  const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // "July 24, 2026" | "16 January, 2024" | "29-Feb-24" | "2024-01-16" | "1/16/2024" → {y, m} or null
+  function parseMonth(s) {
+    s = String(s || '').trim();
+    if (!s) return null;
+    const word = s.match(/[A-Za-z]{3,}/);
+    if (word) {
+      const m = MONTHS[word[0].slice(0, 3).toLowerCase()];
+      if (m == null) return null;
+      const rest = s.replace(word[0], ' ');
+      let y4 = rest.match(/\b(\d{4})\b/);
+      let y;
+      if (y4) y = +y4[1];
+      else {
+        const nums = rest.match(/\d{1,2}/g) || [];
+        if (nums.length >= 2) y = 2000 + (+nums[nums.length - 1]);
+        else return null;
+      }
+      return { y, m };
+    }
+    let iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) return { y: +iso[1], m: +iso[2] - 1 };
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return { y: d.getFullYear(), m: d.getMonth() };
+    return null;
+  }
+
+  function monthKey(ym) { return ym ? ym.y + '-' + String(ym.m + 1).padStart(2, '0') : 'unknown'; }
+  function monthLabel(key) {
+    if (key === 'unknown') return 'Unknown date';
+    const [y, m] = key.split('-');
+    return MONTH_ABBR[+m - 1] + ' ' + y;
+  }
+
+  // Delimiter: count candidates in the header line, outside quotes.
+  function detectDelimiter(headerLine) {
+    const counts = { '\t': 0, ',': 0, ';': 0, '|': 0 };
+    let q = false;
+    for (const ch of headerLine) {
+      if (ch === '"') q = !q;
+      else if (!q && ch in counts) counts[ch]++;
+    }
+    let best = ',', n = -1;
+    for (const k in counts) if (counts[k] > n) { n = counts[k]; best = k; }
+    return best;
+  }
+
+  // RFC 4180-ish parser: quotes, doubled quotes, embedded newlines, CRLF.
+  function parseDelimited(text, delim) {
+    const rows = [];
+    let row = [], field = '', q = false, i = 0;
+    const n = text.length;
+    while (i < n) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          q = false; i++; continue;
+        }
+        field += ch; i++; continue;
+      }
+      if (ch === '"') { q = true; i++; continue; }
+      if (ch === delim) { row.push(field); field = ''; i++; continue; }
+      if (ch === '\r') { i++; continue; }
+      if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += ch; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(r => !(r.length === 1 && r[0].trim() === ''));
+  }
+
+  function normHeader(h) { return String(h || '').replace(/^﻿/, '').trim().toLowerCase().replace(/\s+/g, ' '); }
+
+  function findCol(headers, ...cands) {
+    for (const c of cands) {
+      const i = headers.indexOf(c);
+      if (i !== -1) return i;
+    }
+    for (const c of cands) {
+      const i = headers.findIndex(h => h.indexOf(c) !== -1);
+      if (i !== -1) return i;
+    }
+    return -1;
+  }
+
+  // Text → array of record objects {date,type,title,info,currency,amount,fees,net,key}
+  function parseStatement(text, fileName) {
+    text = String(text || '').replace(/^﻿/, '');
+    const firstNl = text.indexOf('\n');
+    const headerLine = firstNl === -1 ? text : text.slice(0, firstNl);
+    const delim = detectDelimiter(headerLine);
+    const rows = parseDelimited(text, delim);
+    if (rows.length < 1) throw new Error(fileName + ': file is empty.');
+    const headers = rows[0].map(normHeader);
+    const col = {
+      date: findCol(headers, 'date'),
+      type: findCol(headers, 'type'),
+      title: findCol(headers, 'title'),
+      info: findCol(headers, 'info'),
+      currency: findCol(headers, 'currency'),
+      amount: findCol(headers, 'amount'),
+      fees: findCol(headers, 'fees & taxes', 'fees and taxes', 'fees'),
+      net: findCol(headers, 'net')
+    };
+    if (col.type === -1 || col.title === -1 || col.net === -1 || col.date === -1) {
+      throw new Error(fileName + ': this does not look like an Etsy Payment-account statement (need Date, Type, Title and Net columns).');
+    }
+    const get = (r, i) => (i === -1 || i >= r.length) ? '' : String(r[i]).trim();
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.every(c => String(c).trim() === '')) continue;
+      const rec = {
+        date: get(r, col.date),
+        type: get(r, col.type),
+        title: get(r, col.title),
+        info: get(r, col.info),
+        currency: get(r, col.currency),
+        amountRaw: get(r, col.amount),
+        feesRaw: get(r, col.fees),
+        netRaw: get(r, col.net)
+      };
+      rec.key = [rec.date, rec.type, rec.title, rec.info, rec.currency, rec.amountRaw, rec.feesRaw, rec.netRaw].join('\u001f');
+      out.push(rec);
+    }
+    return out;
+  }
+
+  /* ---------------------------------------------------------------
+     Compute
+     --------------------------------------------------------------- */
+  function round2(n) { const r = Math.round((n + Number.EPSILON) * 100) / 100; return r === 0 ? 0 : r; }
+
+  // Value per row: Net, else Fees & Taxes, else Amount, else 0.
+  function rowValue(rec) {
+    let v = parseMoney(rec.netRaw);
+    if (v == null) v = parseMoney(rec.feesRaw);
+    if (v == null) v = parseMoney(rec.amountRaw);
+    return v == null ? 0 : v;
+  }
+
+  function depositAmount(rec, value) {
+    let n = firstNumber(rec.title);
+    if (n == null) n = firstNumber(rec.info);
+    if (n == null) n = Math.abs(value);
+    const returned = /returned/i.test(rec.title);
+    return returned ? -n : n;
+  }
+
+  function compute(records) {
+    const lines = {};
+    const addLine = (name, v) => {
+      if (!lines[name]) lines[name] = { count: 0, total: 0 };
+      lines[name].count++; lines[name].total += v;
+    };
+    const months = {};
+    const monthOf = (rec) => {
+      const k = monthKey(parseMonth(rec.date));
+      if (!months[k]) months[k] = { sales: 0, refunds: 0, fees: 0, net: 0, deposits: 0, depositCount: 0, rows: 0 };
+      return months[k];
+    };
+    const unclassified = [];
+    const currencies = {};
+    let sumAll = 0, sumClassified = 0;
+    let salesGross = 0, salesCount = 0, embeddedFees = 0, embeddedCount = 0;
+    let depositTotal = 0, depositCount = 0;
+
+    for (const rec of records) {
+      const v = rowValue(rec);
+      const cat = classify(rec.type, rec.title);
+      const mo = monthOf(rec);
+      mo.rows++; mo.net += v;
+      sumAll += v;
+      if (rec.currency) currencies[rec.currency] = (currencies[rec.currency] || 0) + 1;
+
+      if (cat === L.UNC) {
+        unclassified.push({ type: rec.type, title: rec.title, info: rec.info, net: v });
+        addLine(L.UNC, v);
+        continue;
+      }
+      sumClassified += v;
+
+      if (cat === L.SALES) {
+        let gross = parseMoney(rec.amountRaw);
+        if (gross == null) gross = v;
+        salesGross += gross; salesCount++;
+        mo.sales += gross;
+        const f = parseMoney(rec.feesRaw);
+        if (f != null && f !== 0) { embeddedFees += f; embeddedCount++; mo.fees += f; }
+        continue;
+      }
+      addLine(cat, v);
+      if (cat === L.REFUNDS) mo.refunds += v;
+      else if (FEE_LINES.indexOf(cat) !== -1) mo.fees += v;
+      if (cat === L.DEPOSIT) {
+        const d = depositAmount(rec, v);
+        depositTotal += d; depositCount++;
+        mo.deposits += d; mo.depositCount++;
+      }
+    }
+    if (embeddedCount) lines[L.SALE_EMBEDDED] = { count: embeddedCount, total: embeddedFees };
+
+    let feesTotal = 0, feesCount = 0;
+    for (const name of FEE_LINES) if (lines[name]) { feesTotal += lines[name].total; feesCount += lines[name].count; }
+
+    const monthKeys = Object.keys(months).sort((a, b) => (a === 'unknown') - (b === 'unknown') || a.localeCompare(b));
+    const currency = Object.keys(currencies).sort((a, b) => currencies[b] - currencies[a])[0] || '';
+
+    const refunds = lines[L.REFUNDS] || { count: 0, total: 0 };
+    const passThrough = lines[L.SALES_TAX] || { count: 0, total: 0 };
+    const salesG = round2(salesGross);
+    const feesR = round2(feesTotal);
+    const pct = salesG > 0 ? Math.abs(feesR) / salesG * 100 : null;
+
+    return {
+      rows: records.length,
+      currency,
+      currencies,
+      lines,
+      sales: { count: salesCount, total: salesG },
+      refunds: { count: refunds.count, total: round2(refunds.total) },
+      fees: { count: feesCount, total: feesR },
+      feesPctOfSales: pct == null ? null : Math.round(pct * 100) / 100,
+      keptPer100: pct == null ? null : Math.round(pct * 100) / 100,
+      passThroughTax: { count: passThrough.count, total: round2(passThrough.total) },
+      deposits: { count: depositCount, total: round2(depositTotal) },
+      unclassified,
+      statementNet: round2(sumAll),
+      classifiedNet: round2(sumClassified),
+      proof: round2(sumAll - sumClassified),
+      months: monthKeys.map(k => ({ key: k, label: monthLabel(k), sales: round2(months[k].sales), refunds: round2(months[k].refunds), fees: round2(months[k].fees), net: round2(months[k].net), deposits: round2(months[k].deposits), depositCount: months[k].depositCount, rows: months[k].rows }))
+    };
+  }
+
+  /* ---------------------------------------------------------------
+     Formatting
+     --------------------------------------------------------------- */
+  const SYMBOLS = { USD: '$', EUR: '€', GBP: '£', CAD: 'CA$', AUD: 'A$', NZD: 'NZ$', JPY: '¥', INR: '₹', VND: '₫', MXN: 'MX$', BRL: 'R$', CHF: 'CHF ', SEK: 'kr ', NOK: 'kr ', DKK: 'kr ', PLN: 'zł ', CZK: 'Kč ', HUF: 'Ft ', ILS: '₪', TRY: '₺', PHP: '₱', THB: '฿', ZAR: 'R ', SGD: 'S$', HKD: 'HK$', KRW: '₩', MYR: 'RM ', IDR: 'Rp ', TWD: 'NT$', CNY: '¥', RON: 'lei ' };
+  function symbolFor(code) {
+    code = String(code || '').toUpperCase();
+    if (!code) return '';
+    return SYMBOLS[code] != null ? SYMBOLS[code] : code + ' ';
+  }
+  function fmtMoney(n, sym) {
+    const neg = n < 0;
+    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (neg ? '-' : '') + sym + abs;
+  }
+  function cell(n, sym, { sign = true } = {}) {
+    const cls = sign && n < 0 ? 'neg' : (sign && n > 0 ? 'pos' : '');
+    return `<td class="num ${cls}">${fmtMoney(n, sym)}</td>`;
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  /* ---------------------------------------------------------------
+     Render
+     --------------------------------------------------------------- */
+  const $ = (id) => document.getElementById(id);
+
+  function render(res) {
+    const sym = symbolFor(res.currency);
+    $('results').hidden = false;
+
+    const codes = Object.keys(res.currencies);
+    $('currency-note').textContent = codes.length > 1
+      ? 'Mixed currencies in these files (' + codes.join(', ') + '). Totals shown in ' + res.currency + '.'
+      : (res.currency ? 'Currency: ' + res.currency : '');
+
+    $('t-rows').textContent = res.rows.toLocaleString('en-US');
+    $('t-rows-s').textContent = res.months.length ? res.months.reduce((a, m) => a + m.rows, 0) === res.rows ? 'every row dated' : '' : '';
+
+    const u = res.unclassified.length;
+    $('t-unc').textContent = u;
+    $('tile-unc').className = 'tile ' + (u === 0 ? 'ok' : 'bad');
+    $('t-unc-s').textContent = u === 0 ? 'every row has a line' : 'listed below';
+
+    const ok = Math.abs(res.proof) < 0.005;
+    $('t-proof').textContent = '= ' + fmtMoney(res.proof, sym);
+    $('tile-proof').className = 'tile ' + (ok ? 'ok' : 'bad');
+    $('t-proof-s').textContent = ok ? 'the lines add back to Etsy’s net' : 'gap equals the unclassified rows';
+
+    const months = res.months.filter(m => m.key !== 'unknown');
+    $('t-months').textContent = months.length;
+    $('t-months-s').textContent = months.length === 0 ? '' : months.length === 1 ? months[0].label : months[0].label + ' – ' + months[months.length - 1].label;
+
+    if (res.keptPer100 != null) {
+      $('headline').innerHTML = 'Etsy kept <b>' + fmtMoney(res.keptPer100, sym) + '</b> of every ' + fmtMoney(100, sym).replace('.00', '') + ' you sold.';
+    } else {
+      $('headline').innerHTML = 'No sales in this statement, so no fee-to-sales ratio.';
+    }
+
+    // Fee tree
+    const rowsHtml = [];
+    const line = (name, l, cls = '') => `<tr class="${cls}"><td>${name}</td><td class="num n">${l.count}</td>${cell(l.total, sym)}</tr>`;
+    rowsHtml.push(line('Sales (gross)', res.sales));
+    rowsHtml.push(line('Refunds', res.refunds));
+    rowsHtml.push(`<tr class="group"><td colspan="3">Etsy fees</td></tr>`);
+    for (const name of FEE_LINES) {
+      if (res.lines[name]) rowsHtml.push(line(name, res.lines[name], 'indent'));
+    }
+    rowsHtml.push(line('Total Etsy fees', res.fees, 'total'));
+    rowsHtml.push(`<tr class="sub"><td>Fees as % of sales</td><td class="num n"></td><td class="num">${res.feesPctOfSales == null ? '–' : res.feesPctOfSales.toFixed(2) + '%'}</td></tr>`);
+    const others = OTHER_LINES.filter(n => res.lines[n]);
+    if (others.length) {
+      rowsHtml.push(`<tr class="group"><td colspan="3">Not fees</td></tr>`);
+      for (const name of others) {
+        const label = name === L.SALES_TAX ? 'Sales tax remitted (pass-through)<span class="tag">not a fee</span>' : name;
+        rowsHtml.push(line(label, res.lines[name], 'indent'));
+      }
+    }
+    rowsHtml.push(`<tr class="group"><td colspan="3">Payouts</td></tr>`);
+    rowsHtml.push(`<tr class="indent"><td>Deposits to your bank</td><td class="num n">${res.deposits.count}</td><td class="num">${fmtMoney(res.deposits.total, sym)}</td></tr>`);
+    if (res.lines[L.UNC]) rowsHtml.push(line('Unclassified', res.lines[L.UNC], 'total'));
+    $('tree-body').innerHTML = rowsHtml.join('');
+
+    // Monthly
+    $('monthly-body').innerHTML = res.months.map(m =>
+      `<tr><td>${esc(m.label)}</td>${cell(m.sales, sym)}${cell(m.refunds, sym)}${cell(m.fees, sym)}${cell(m.net, sym)}<td class="num">${fmtMoney(m.deposits, sym)}</td></tr>`
+    ).join('');
+
+    // Unclassified
+    $('unc-section').hidden = u === 0;
+    $('unc-body').innerHTML = res.unclassified.map(r =>
+      `<tr><td>${esc(r.type)}</td><td>${esc(r.title)}</td><td class="n">${esc(r.info)}</td>${cell(r.net, sym)}</tr>`
+    ).join('');
+
+    // Machine-readable copy for tests and for anyone who wants to check the numbers.
+    $('checker-json').textContent = JSON.stringify(res);
+    window.__checker.result = res;
+  }
+
+  /* ---------------------------------------------------------------
+     State and input
+     --------------------------------------------------------------- */
+  let records = [];
+  const loadedFiles = [];
+
+  // Append records; a row already present as many times as in the new file is skipped
+  // (re-dropping the same statement adds nothing, overlapping exports merge, in-file duplicates survive).
+  function appendRecords(newRecs) {
+    const have = {};
+    for (const r of records) have[r.key] = (have[r.key] || 0) + 1;
+    const seen = {};
+    let added = 0;
+    for (const r of newRecs) {
+      seen[r.key] = (seen[r.key] || 0) + 1;
+      if (seen[r.key] > (have[r.key] || 0)) { records.push(r); added++; }
+    }
+    return added;
+  }
+
+  function showError(msg) { const e = $('error'); e.hidden = !msg; e.textContent = msg || ''; }
+
+  function refresh() {
+    $('files').innerHTML = loadedFiles.map(f => `<li>${esc(f.name)} · ${f.added ? f.added + ' rows' : 'already loaded'}</li>`).join('');
+    $('clear').hidden = records.length === 0;
+    if (records.length) {
+      render(compute(records));
+      requestAnimationFrame(() => $('results').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    } else {
+      $('results').hidden = true;
+      $('checker-json').textContent = '{}';
+    }
+  }
+
+  function ingestText(text, name) {
+    try {
+      const recs = parseStatement(text, name);
+      const added = appendRecords(recs);
+      loadedFiles.push({ name, added });
+      showError('');
+    } catch (err) {
+      showError(err.message || String(err));
+    }
+  }
+
+  function readFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    let pending = files.length;
+    files.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = () => { ingestText(reader.result, f.name); if (--pending === 0) refresh(); };
+      reader.onerror = () => { showError('Could not read ' + f.name); if (--pending === 0) refresh(); };
+      reader.readAsText(f, 'utf-8');
+    });
+  }
+
+  const drop = $('drop');
+  $('file').addEventListener('change', (e) => { readFiles(e.target.files); e.target.value = ''; });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', (e) => readFiles(e.dataTransfer && e.dataTransfer.files));
+
+  $('clear').addEventListener('click', () => { records = []; loadedFiles.length = 0; showError(''); refresh(); });
+
+  $('sample').addEventListener('click', () => { ingestText(SAMPLE, 'sample statement (Mar 2026)'); refresh(); });
+
+  /* ---------------------------------------------------------------
+     Embedded sample: one synthetic month in Etsy's real vocabulary.
+     --------------------------------------------------------------- */
+  const SAMPLE = [
+    'Date,Type,Title,Info,Currency,Amount,"Fees & Taxes",Net,"Tax Details",Status,"Availability Date"',
+    '"March 31, 2026",Marketing,"Etsy Ads","Bill for click-throughs to your shop on Mar 30, 2026",USD,--,-$0.42,-$0.42,--',
+    '"March 31, 2026",Deposit,"$188.14 sent to your bank account",,USD,--,--,--,--',
+    '"March 30, 2026",Tax,"Tax: Transaction","Order #4201556203",USD,--,-$0.03,-$0.03,--',
+    '"March 30, 2026",Fee,"Transaction fee: Shipping","Order #4201556203",USD,--,-$0.38,-$0.38,--',
+    '"March 30, 2026",Fee,"Transaction fee: Linen tea towel, hand-printed botanical ...","Order #4201556203",USD,--,-$1.82,-$1.82,--',
+    '"March 30, 2026",Tax,"Sales tax paid by buyer","Order #4201556203",USD,--,-$2.14,-$2.14,--',
+    '"March 30, 2026",Fee,"Processing fee","Order #4201556203",USD,--,-$1.21,-$1.21,--',
+    '"March 30, 2026",Sale,"Payment for Order #4201556203",,USD,$36.03,--,$36.03,--',
+    '"March 29, 2026",Marketing,"Etsy Ads","Bill for click-throughs to your shop on Mar 28, 2026",USD,--,-$0.31,-$0.31,--',
+    '"March 28, 2026",Fee,"Listing fee","Listing #4479002118",USD,--,-$0.20,-$0.20,--',
+    '"March 28, 2026",Fee,"Listing fee","Listing #4479002334",USD,--,-$0.20,-$0.20,--',
+    '"March 27, 2026",Marketing,"Fee for sale made through Offsite Ads","Order #4199873310",USD,--,-$6.60,-$6.60,--',
+    '"March 27, 2026",Tax,"Tax: Transaction","Order #4199873310",USD,--,-$0.05,-$0.05,--',
+    '"March 27, 2026",Fee,"Transaction fee: Shipping","Order #4199873310",USD,--,-$0.46,-$0.46,--',
+    '"March 27, 2026",Fee,"Transaction fee: Set of four linen napkins, natural flax ...","Order #4199873310",USD,--,-$2.86,-$2.86,--',
+    '"March 27, 2026",Tax,"Sales tax paid by buyer","Order #4199873310",USD,--,-$3.47,-$3.47,--',
+    '"March 27, 2026",Fee,"Processing fee","Order #4199873310",USD,--,-$1.84,-$1.84,--',
+    '"March 27, 2026",Sale,"Payment for Order #4199873310",,USD,$57.47,--,$57.47,--',
+    '"March 26, 2026",Shipping,"USPS shipping label","Order #4199873310",USD,--,-$8.72,-$8.72,--',
+    '"March 24, 2026",Marketing,"Etsy Ads","Bill for click-throughs to your shop on Mar 23, 2026",USD,--,-$0.27,-$0.27,--',
+    '"March 22, 2026",Fee,"Credit for transaction fee on Linen tea towel, hand-printed botanical ...","Order #4190110077",USD,--,$1.82,$1.82,--',
+    '"March 22, 2026",Fee,"Credit for processing fee","Order #4190110077",USD,--,$1.21,$1.21,--',
+    '"March 22, 2026",Tax,"Refund to buyer for sales tax","Order #4190110077",USD,--,$2.14,$2.14,--',
+    '"March 22, 2026",Refund,"Refund to buyer for Order #4190110077",,USD,-$33.89,--,-$33.89,--',
+    '"March 20, 2026",Tax,"Tax: Transaction","Order #4195540021",USD,--,-$0.02,-$0.02,--',
+    '"March 20, 2026",Fee,"Transaction fee: Shipping","Order #4195540021",USD,--,-$0.38,-$0.38,--',
+    '"March 20, 2026",Fee,"Transaction fee: Linen tea towel, hand-printed botanical ...","Order #4195540021",USD,--,-$1.82,-$1.82,--',
+    '"March 20, 2026",Fee,"Processing fee","Order #4195540021",USD,--,-$1.09,-$1.09,--',
+    '"March 20, 2026",Sale,"Payment for Order #4195540021",,USD,$33.89,--,$33.89,--',
+    '"March 18, 2026",Fee,"Listing fee","Listing #4471188820",USD,--,-$0.20,-$0.20,--',
+    '"March 16, 2026",Marketing,"Etsy Ads","Bill for click-throughs to your shop on Mar 15, 2026",USD,--,-$0.19,-$0.19,--',
+    '"March 15, 2026",Fee,"Regulatory Operating fee","Order #4192230440",USD,--,-$0.12,-$0.12,--',
+    '"March 15, 2026",Fee,"Transaction fee: Set of four linen napkins, natural flax ...","Order #4192230440",USD,--,-$2.86,-$2.86,--',
+    '"March 15, 2026",Fee,"Processing fee","Order #4192230440",USD,--,-$1.62,-$1.62,--',
+    '"March 15, 2026",Sale,"Payment for Order #4192230440",,USD,$44.00,--,$44.00,--',
+    '"March 10, 2026",Fee,"Etsy Plus subscription fee","Mar 10 - Apr 10, 2026",USD,--,-$10.00,-$10.00,--',
+    '"March 8, 2026",Deposit,"$71.20 sent to your bank account",,USD,--,--,--,--',
+    '"March 5, 2026",Fee,"Listing fee","Listing #4466076995",USD,--,-$0.20,-$0.20,--',
+    '"March 3, 2026",Fee,"Auto-renew sold","Listing #4412309901",USD,--,-$0.20,-$0.20,--',
+    '"March 1, 2026",Payment,"Card Payment","Visa ending in 4471",USD,--,$12.34,$12.34,--'
+  ].join('\n');
+
+  // Expose the pure functions for tests and for the curious.
+  window.__checker = { classify, parseMoney, parseMonth, parseStatement, compute, rowValue, depositAmount, result: null };
+})();
+</script>
+<p style="max-width:860px;margin:24px auto 40px;padding:0 24px;font-size:12px;color:#777;letter-spacing:.02em">Made by an independent Etsy seller. This product is not made or endorsed by Etsy, Inc.; Etsy is a trademark of Etsy, Inc.</p>
+</body>
+</html>
